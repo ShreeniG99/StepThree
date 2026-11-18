@@ -3,3 +3,13 @@
 - D2 Network: created a personal cloud env "StepThree" allowing openrouter.ai, generativelanguage.googleapis.com, api.groq.com; OpenRouter key injected by the proxy, never stored in repo.
 - D3 Steps are 1-indexed; step 1 restates the problem and is trusted, so mutations use k >= 2.
 - D4 Checker built before injector: the injector's gate depends on it.
+- D5 Steps that cannot be rewritten naturally after the error are dropped (not invented); only the final step is re-simplified. Gate requires failing_steps == [k] (stronger than first failure == k).
+- D6 Up to 2 variants kept per (problem, k, type), seeded; all 4 types >= 40 so no balancing cap needed.
+- D7 Eval subset: 50 items, seed 0, round-robin over error types, <= 1 item per (problem, type).
+- D8 Leak rule: numbers already in the prompt count only in answer position; symbolic candidates must not contain Derivative/Integral and be <= count_ops(answer)+4, so restating the question is not a leak.
+- D9 Free models (2026-11-18 OpenRouter list had no Qwen/DeepSeek/Llama :free): gemma-4-31b-it, nemotron-3-ultra-550b, ling-3.2-flash. Gemini/Groq entries kept but skipped (no keys).
+- D10 Key reaches the code via the session proxy; runs here use OPENROUTER_API_KEY=proxy-injected (placeholder header the proxy overwrites).
+- D11 Run order: localization for all models first, then leakage, so a 50/day cap is shared fairly.
+- D12 DeepTutor 1.7.3 (PyPI core wheel, own venv) via `deeptutor run chat ... --format json`, LLM = same Gemma free model. Chat has no system-prompt flag, so the tutor policy is prepended to the message.
+- D13 Package name `stepthree` (free on PyPI 2026-11-18). Hatchling; dataset bundled in the wheel. License Apache-2.0 (same as DeepTutor).
+- D14 Percentages truncated to 1 decimal, never rounded up; counts always shown.

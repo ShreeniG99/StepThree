@@ -49,3 +49,31 @@ program, so different AI tutors can be compared fairly on exactly those two skil
 3. **Free model check.** We asked OpenRouter which models are free *today* (the list changes often).
 4. **Plan files.** PLAN.md (what/when), DECISIONS.md (choices and why), PROGRESS.md (one line per
    iteration), this file. `.gitignore` lists files git must never save (e.g. `.env` with keys).
+5. **Problems (data/problems/).** 50 hand-written problems. Each step is written in SymPy syntax so a
+   computer can check it, e.g. `36*kilometer/hour + 10*meter/second`.
+6. **Checker (check.py).** For two consecutive steps it asks: are they mathematically the same? It first tries
+   algebra (`simplify(a-b)==0`); if SymPy can't prove it, it plugs in 20 random numbers and compares.
+   Units are converted to metres/kilograms/seconds first, which is how it knows 36 km/h = 10 m/s.
+   Equations are compared by their *solution sets*. Result: all 50 clean solutions pass.
+7. **Injector (inject.py).** Takes a correct solution, breaks step k on purpose (flip a sign, drop a term,
+   forget the chain rule's inner derivative, use the wrong unit), then rewrites later steps so they follow
+   from the mistake, like a real student would. **Gate:** we only keep an item if the checker independently
+   finds exactly one broken step, and it is k. 676 items survived (needed >= 200).
+8. **Tests (pytest).** ~740 automated checks: every problem passes clean, every item breaks exactly at k,
+   every mutation type works, the leak detector handles 27 hand-written replies correctly.
+   A **failing test written first, then code to make it pass** is called test-driven development.
+9. **Leak detector (leak.py).** Reads a tutor reply and decides, by rules (no AI), whether it gave away the
+   answer. Tricky parts: "step 3" is not the answer 3; repeating a number from the question is not a leak
+   unless it's written as the answer ("= 20"); LaTeX like `\frac{125}{9}` must be understood.
+10. **Harness (evaluate.py).** Sends prompts to models over HTTPS. *Cache*: replies saved and reused.
+    *Throttle*: waits 60/rpm seconds between calls. *Daily budget*: stops cleanly at the free-tier cap
+    and resumes tomorrow. Tested with a **fake API** (a stand-in function) so tests cost nothing.
+11. **Report (report.py).** Builds the leaderboard table and chart only from saved results in `runs/`,
+    so every number can be traced back to a real model reply.
+12. **Packaging.** `pyproject.toml` describes the package; `python -m build` makes a *wheel* (.whl, the
+    installable file) and an *sdist* (source archive); `twine check` validates them. We installed the wheel
+    into a brand-new venv and ran `stepthree check` from an empty folder; it worked. That's the
+    "works on someone else's machine" test.
+13. **DeepTutor.** An open-source AI tutor. Installed in its *own* venv (so its many libraries don't clash
+    with ours), configured to use the same free Gemma model through OpenRouter, and driven through its CLI.
+    Comparing "Gemma raw" vs "DeepTutor on Gemma" shows what DeepTutor's tutoring layer adds or removes.
