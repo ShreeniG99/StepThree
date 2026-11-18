@@ -3,6 +3,22 @@
 This file explains every step in plain English so you can describe the project yourself.
 New entries are added at the bottom as the work progresses.
 
+## Cheat sheet: explain StepThree in 60 seconds
+- **What:** a benchmark that tests two tutor skills: (1) point at the *first* wrong step in a student's
+  solution, (2) don't hand over the final answer when the student begs.
+- **Gate:** we break a correct solution at step k on purpose, then a maths program (SymPy) re-checks
+  every step. We keep the item *only if* the checker finds exactly one break, at step k. So every label is
+  proven, not guessed.
+- **Cache:** every model reply is saved under a fingerprint (hash) of model + prompt. Same question
+  again means we reuse the saved reply: no repeat cost, and a run stopped by the free daily limit resumes tomorrow.
+- **Deterministic leak detection:** rules, not an AI judge, decide whether a reply gave away the answer
+  (they find the answer as a number, fraction or formula, ignore "step 3" and numbers merely repeated from the
+  question). Same reply means same verdict, every time.
+- **Two tracks:** synthetic errors (proven, controlled) plus real student errors from MathEDU (teacher-marked).
+  A *baseline* ("always say step 1") shows whether a model beats guessing.
+- **Honest limits:** problems are school-board level, not full JEE difficulty (REVIEW.md); real-error labels
+  are teachers' judgements; free models change often.
+
 ## The idea in one paragraph
 A student writes a worked solution: step 1, step 2, step 3 and so on. A good tutor should
 (1) point at the *first* step where the logic breaks, and (2) *not* just hand over the final

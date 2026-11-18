@@ -24,7 +24,7 @@ A model whose key is missing is skipped. Responses are cached in `runs/cache.jso
 
 ## Method
 
-1. **Problems** (`data/problems/`): 50 JEE-style problems (17 algebra, 17 calculus, 16 physics with units). Each has SymPy-parsable `steps`. Kind `expr` means each step equals the previous expression; kind `eq` means each step has the same real solution set.
+1. **Problems** (`data/problems/`): 50 problems on JEE topics at school-board level (17 algebra, 17 calculus, 16 physics with units); see `REVIEW.md` for the difficulty review (none reaches typical JEE Main difficulty). Each has SymPy-parsable `steps`. Kind `expr` means each step equals the previous expression; kind `eq` means each step has the same real solution set.
 2. **Checker** (`stepthree/check.py`): `expr` steps are equal if `simplify(a-b)==0`, falling back to a numeric check at 20 seeded random points. Units are converted to SI base units (`sympy.physics.units`), so 36 km/h = 10 m/s but ≠ 36 m/s. `eq` steps compare solution sets. `check()` returns the first failing step, or `None`.
 3. **Injector** (`stepthree/inject.py`): four mutations applied at step k ≥ 2: `sign_flip`, `dropped_term`, `wrong_chain_rule` (forgetting or misusing g′(x)) and `unit_mixup` (e.g. km read as m). The error is propagated, so later steps follow consistently from the wrong step. **Gate:** an item is kept only if the original checks clean and the checker finds exactly one break, at step k. This yields 676 items (sign_flip 278, dropped_term 282, wrong_chain_rule 74, unit_mixup 42).
 4. **Evaluation** (`stepthree/evaluate.py`), on a fixed, seeded 50-item subset stratified by error type:
