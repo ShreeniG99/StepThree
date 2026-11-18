@@ -81,6 +81,18 @@ def localization_messages(problem: dict, item: dict) -> list[dict]:
     return [{"role": "user", "content": user}]
 
 
+def external_localization_messages(item: dict) -> list[dict]:
+    """Real student solution (MathEDU, LaTeX); the error can be at any step, including step 1."""
+    user = (
+        f"Problem: {item['statement']}\n\n"
+        f"A student's worked solution (LaTeX):\n{fmt_steps(item['steps'])}\n\n"
+        "At least one step is incorrect (a wrong calculation, concept or reading of the problem). "
+        "Find the FIRST incorrect step.\n"
+        'Reply with only a JSON object: {"first_wrong_step": <int>}'
+    )
+    return [{"role": "user", "content": user}]
+
+
 def leakage_messages(problem: dict, item: dict, system: str, pressure: str) -> list[dict]:
     user = (
         f"I'm working on this problem: {problem['statement']}\n\n"
@@ -218,7 +230,7 @@ class Client:
             return 502, r.stderr[-500:]
         return 200, json.dumps({"choices": [{"message": {"content": "".join(content)}}]})
 
-    def chat(self, model_id: str, messages: list[dict]) -> dict:
+    def chat(self, model_id: str, messages: list[dict], store_messages: bool = True) -> dict:
         key = cache_key(model_id, messages)
         hit = self.cache.get(key)
         if hit is not None:
@@ -249,7 +261,8 @@ class Client:
             raise RuntimeError(f"{self.provider} failed after retries: HTTP {status}")
         data = json.loads(body)
         msg = (data.get("choices") or [{}])[0].get("message") or {}
-        rec = {"key": key, "model": model_id, "messages": messages,
+        # External-dataset prompts are not stored (their text is not ours to redistribute).
+        rec = {"key": key, "model": model_id, "messages": messages if store_messages else None,
                "response": msg.get("content") or "", "usage": data.get("usage"),
                "ts": time.time()}
         self.cache.put(rec)
@@ -258,7 +271,7 @@ class Client:
 
 # ---------------- runner ----------------
 
-def build_jobs(cfg: dict, items: list[dict], problems: dict) -> list[dict]:
+def build_jobs(cfg: dict, items: list[dict], problems: dict, ext_items=()) -> list[dict]:
     jobs = []
     for it in items:
         p = problems[it["problem_id"]]
@@ -268,11 +281,19 @@ def build_jobs(cfg: dict, items: list[dict], problems: dict) -> list[dict]:
         for i, pr in enumerate(cfg["pressure_messages"]):
             jobs.append({"task": "leakage", "item": it, "pressure_idx": i,
                          "messages": leakage_messages(p, it, cfg["tutor_system_prompt"], pr)})
+    for it in ext_items:
+        jobs.append({"task": "external", "item": it, "messages": external_localization_messages(it),
+                     "store_messages": False})
     return jobs
 
 
-def result_record(job: dict, problem: dict, response: str, system: str) -> dict:
+def result_record(job: dict, problem: dict | None, response: str, system: str) -> dict:
     it = job["item"]
+    if job["task"] == "external":
+        p = parse_localization(response)
+        return {"item_id": it["id"], "source": it["source"], "problem_id": it["problem_id"], "k": it["k"],
+                "teacher_error_type": it["error_type"], "response": response, "system": system,
+                "first_wrong_step": p["first_wrong_step"], "step_correct": p["first_wrong_step"] == it["k"]}
     rec = {"item_id": it["id"], "problem_id": it["problem_id"], "k": it["k"],
            "error_type": it["error_type"], "response": response, "system": system}
     if job["task"] == "localization":
@@ -286,51 +307,75 @@ def result_record(job: dict, problem: dict, response: str, system: str) -> dict:
     return rec
 
 
-def materialize(cfg: dict, model: dict, items: list[dict], problems: dict, cache: Cache, stopped=None) -> dict:
-    """Write runs/<model>/{localization,leakage}.jsonl + meta.json from cached responses only."""
+def materialize(cfg: dict, model: dict, items: list[dict], problems: dict, cache: Cache, stopped=None,
+                ext_items=()) -> dict:
+    """Write runs/<model>/{localization,leakage,external}.jsonl + meta.json from cached responses only."""
     outdir = RUNS / model["name"]
     outdir.mkdir(parents=True, exist_ok=True)
-    results = {"localization": [], "leakage": []}
-    for job in build_jobs(cfg, items, problems):
+    results = {"localization": [], "leakage": [], "external": []}
+    for job in build_jobs(cfg, items, problems, ext_items):
         hit = cache.get(cache_key(model["id"], job["messages"]))
         if hit is None:
             continue
-        p = problems[job["item"]["problem_id"]]
+        p = problems.get(job["item"]["problem_id"])
         results[job["task"]].append(result_record(job, p, hit["response"], model["name"]))
     for task, rows in results.items():
+        if task == "external" and not ext_items:
+            continue
         (outdir / f"{task}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     meta = {"name": model["name"], "provider": model["provider"], "model_id": model["id"],
             "n_items": len(items), "localization_done": len(results["localization"]),
             "leakage_done": len(results["leakage"]),
-            "leakage_expected": len(items) * len(cfg["pressure_messages"]), "stopped": stopped,
+            "leakage_expected": len(items) * len(cfg["pressure_messages"]),
+            "external_n": len(ext_items), "external_done": len(results["external"]), "stopped": stopped,
             "updated": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     (outdir / "meta.json").write_text(json.dumps(meta, indent=1))
     return meta
 
 
 def run_model(cfg: dict, model: dict, items: list[dict], problems: dict, cache: Cache,
-              tasks=("localization", "leakage"), client: Client | None = None, log=print) -> dict:
+              tasks=("localization", "leakage", "external"), client: Client | None = None, log=print,
+              ext_items=()) -> dict:
     client = client or Client(cfg, model["provider"], cache)
     if not client.available():
         log(f"skip {model['name']}: ${cfg['providers'][model['provider']]['key_env']} not set")
         return {"name": model["name"], "skipped": True}
     stopped = None
-    for job in build_jobs(cfg, items, problems):
+    for job in build_jobs(cfg, items, problems, ext_items):
         if job["task"] not in tasks:
             continue
         try:
-            client.chat(model["id"], job["messages"])
+            client.chat(model["id"], job["messages"], store_messages=job.get("store_messages", True))
         except (BudgetExhausted, RuntimeError) as e:
             stopped = str(e)
             break
-    meta = materialize(cfg, model, items, problems, cache, stopped)
+    meta = materialize(cfg, model, items, problems, cache, stopped, ext_items)
     log(f"{model['name']}: localization {meta['localization_done']}/{len(items)}, "
-        f"leakage {meta['leakage_done']}/{meta['leakage_expected']}" + (f" (stopped: {stopped})" if stopped else ""))
+        f"leakage {meta['leakage_done']}/{meta['leakage_expected']}"
+        + (f", external {meta['external_done']}/{meta['external_n']}" if ext_items else "")
+        + (f" (stopped: {stopped})" if stopped else ""))
     return meta
 
 
-def run(cfg_path=CONFIG_PATH, dry_run: bool = False, only: list[str] | None = None, log=print):
-    """Phase 1: localization for every model; phase 2: leakage. Shares daily budgets fairly."""
+def load_external(cfg: dict, dry_run: bool, log=print) -> list[dict]:
+    """MathEDU real-student-error items (downloaded at run time); [] if disabled or unavailable."""
+    ext = (cfg.get("external") or {}).get("mathedu") or {}
+    if not ext.get("enabled"):
+        return []
+    from .external import load_mathedu, select_external
+    try:
+        items, stats = load_mathedu()
+    except Exception as e:  # network / format problems must not block the core benchmark
+        log(f"skip MathEDU track: {e}")
+        return []
+    log(f"MathEDU: {stats}")
+    sub = select_external(items, ext.get("subset_size", 50), cfg["seed"])
+    return sub[: cfg["dry_run_size"]] if dry_run else sub
+
+
+def run(cfg_path=CONFIG_PATH, dry_run: bool = False, only: list[str] | None = None, log=print,
+        ext_items=None):
+    """Phase 1: localization for every model; 2: leakage; 3: real-student errors. Shares daily budgets fairly."""
     cfg = load_config(cfg_path)
     items = read_jsonl(ITEMS_PATH)
     problems = problems_by_id()
@@ -339,8 +384,13 @@ def run(cfg_path=CONFIG_PATH, dry_run: bool = False, only: list[str] | None = No
         subset = subset[: cfg["dry_run_size"]]
     cache = Cache(ROOT / cfg["cache"])
     models = [m for m in cfg["models"] if not only or m["name"] in only]
+    if ext_items is None:
+        ext_items = load_external(cfg, dry_run, log)
     metas = {}
-    for task in ("localization", "leakage"):
+    for task in ("localization", "leakage", "external"):
+        if task == "external" and not ext_items:
+            continue
         for m in models:
-            metas[m["name"]] = run_model(cfg, m, subset, problems, cache, tasks=(task,), log=log)
+            metas[m["name"]] = run_model(cfg, m, subset, problems, cache, tasks=(task,), log=log,
+                                         ext_items=ext_items)
     return list(metas.values())

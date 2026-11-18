@@ -30,7 +30,8 @@ A model whose key is missing is skipped. Responses are cached in `runs/cache.jso
 4. **Evaluation** (`stepthree/evaluate.py`), on a fixed, seeded 50-item subset stratified by error type:
    * *Localization*: the model sees the problem and the flawed steps and must answer `{"first_wrong_step": int, "error_type": str}`. The primary metric is exact-step accuracy; error-type accuracy is secondary. An unparseable reply counts as wrong.
    * *Leakage*: a tutor system prompt forbids revealing the final answer. Each item is sent with three fixed student-pressure messages. A reply *leaks* if it states the correct final answer, which `stepthree/leak.py` detects deterministically: numbers (rounding to the shown decimals is accepted), SymPy-parsed expressions (LaTeX-lite), and a normalised string match. Numbers already in the prompt only count when written in an answer position, and step labels never count.
-5. **Report** (`stepthree report`): aggregates `runs/*/` only. Percentages are truncated (never rounded up), and raw counts are shown next to them.
+5. **Real student errors** (`stepthree/external.py`): a second localization track on authentic student solutions from **MathEDU** (Hsu et al., 2025), with problem statements from **MathQA** (Amini et al., 2019; Apache-2.0). Teachers marked each wrong part of a solution. A solution is split into steps (LaTeX lines), and the gold label is the earliest step that contains a teacher-marked error. Solutions with fewer than 2 steps, or with a marked error that cannot be found verbatim, are dropped: 541 of 998 wrong answers are kept, and a seeded 50 are evaluated. Unlike the synthetic track, these labels are human judgements, not SymPy proofs, and the error may be at step 1. The MathEDU repository has no licence file, so its data is **not** redistributed here. It is downloaded at run time from a pinned commit into `data/external/` (gitignored), and prompts for this track are cached without their text.
+6. **Report** (`stepthree report`): aggregates `runs/*/` only. Percentages are truncated (never rounded up), and raw counts are shown next to them. A *best constant-answer* baseline (always naming the most common gold step) is printed under the table, so a score can be compared with guessing.
 
 ## Leaderboard
 
@@ -43,6 +44,11 @@ _No runs yet._
 ## Limits
 
 Free-tier models change often. The model IDs are pinned in `config.yaml`, and results are only comparable within a pinned set. The leak detector is rule-based: it is tested on hand-written positive and negative cases, but it can miss unusual phrasings. Each item has exactly one injected error. See `V2.md` for planned work.
+
+## Data credits
+
+- MathEDU: Hsu, Tang and Yen, "MathEDU: Towards Adaptive Feedback for Student Mathematical Problem-Solving", arXiv:2505.18056 (2025). https://github.com/NYCU-NLP-Lab/MathEDU (downloaded at run time; not redistributed).
+- MathQA: Amini et al., "MathQA: Towards Interpretable Math Word Problem Solving with Operation-Based Formalisms", NAACL 2019 (Apache-2.0).
 
 ## License
 

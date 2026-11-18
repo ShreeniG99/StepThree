@@ -84,3 +84,12 @@ program, so different AI tutors can be compared fairly on exactly those two skil
     key), or running on your own laptop. **Rate limits in practice:** 800 calls at 50/day ≈ 16 days; the
     cache means each daily rerun continues where the last stopped. `scripts/setup_deeptutor.sh` is a
     **shell script**: a recorded list of terminal commands so anyone can repeat the DeepTutor install exactly.
+15. **A second, "real students" track (MathEDU).** We checked nine published datasets; only MathEDU had
+    real student working *and* a marked error location *and* text we can feed to text-only models. Words:
+    - **Licence:** the legal terms for reusing data or code. *No licence file* means "all rights reserved" by
+      default, so we don't copy it into our repo; our code downloads it on the user's machine instead.
+    - **Pinned commit:** we download one exact version (a git commit id) so results are reproducible
+      even if the authors change their files later.
+    - **Gold label:** the "correct answer" a model is scored against. Here it comes from teachers, not SymPy.
+    - **Baseline:** the score of a dumb strategy (e.g. "always say step 1"). A model is only impressive if
+      it beats the baseline. On real data ~40% of errors are at step 1, so this matters a lot.

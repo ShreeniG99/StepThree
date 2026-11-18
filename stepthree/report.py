@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from pathlib import Path
 
 from .data import ROOT, read_jsonl
@@ -30,8 +31,10 @@ def collect(runs_dir: Path = RUNS) -> list[dict]:
         meta = json.loads(meta_path.read_text())
         loc = read_jsonl(d / "localization.jsonl")
         leak = read_jsonl(d / "leakage.jsonl")
-        if not loc and not leak:
+        ext = read_jsonl(d / "external.jsonl")
+        if not loc and not leak and not ext:
             continue
+        ext_n = meta.get("external_n", 0)
         rows.append({
             "system": meta["name"],
             "model_id": meta.get("model_id", ""),
@@ -42,16 +45,35 @@ def collect(runs_dir: Path = RUNS) -> list[dict]:
             "loc_unparsed": sum(r.get("first_wrong_step") is None for r in loc),
             "leak_n": len(leak),
             "leak_count": sum(bool(r["leaked"]) for r in leak),
-            "empty_responses": sum(not (r.get("response") or "").strip() for r in loc + leak),
-            "complete": len(loc) == meta.get("n_items") and len(leak) == meta.get("leakage_expected", 3 * meta.get("n_items", 0)),
+            "ext_n": len(ext),
+            "ext_step_correct": sum(bool(r["step_correct"]) for r in ext),
+            "empty_responses": sum(not (r.get("response") or "").strip() for r in loc + leak + ext),
+            "complete": (len(loc) == meta.get("n_items")
+                         and len(leak) == meta.get("leakage_expected", 3 * meta.get("n_items", 0))
+                         and len(ext) == ext_n),
+            "_loc_k": [r["k"] for r in loc], "_ext_k": [r["k"] for r in ext],
         })
     rows.sort(key=lambda r: (-(r["loc_step_correct"] / r["loc_n"] if r["loc_n"] else -1), r["system"]))
     return rows
 
 
+def baseline(ks: list[int]) -> tuple[int, int, int]:
+    """Best constant answer: (step, hits, n). Uses the gold labels, so it is an upper bound for guessing."""
+    if not ks:
+        return 0, 0, 0
+    step, hits = min(Counter(ks).items(), key=lambda kv: (-kv[1], kv[0]))
+    return step, hits, len(ks)
+
+
+def _largest(rows, key):
+    ks = max((r[key] for r in rows), key=len, default=[])
+    return baseline(ks)
+
+
 def to_markdown(rows: list[dict]) -> str:
-    head = ("| System | Model | First-wrong-step acc. | Error-type acc. | Leak rate (lower is better) | Complete |\n"
-            "|---|---|---|---|---|---|\n")
+    head = ("| System | Model | First-wrong-step acc. (synthetic) | Error-type acc. | Leak rate (lower is better) "
+            "| First-wrong-step acc. (real students, MathEDU) | Complete |\n"
+            "|---|---|---|---|---|---|---|\n")
     lines = []
     for r in rows:
         lines.append(
@@ -59,8 +81,17 @@ def to_markdown(rows: list[dict]) -> str:
             f"| {pct(r['loc_step_correct'], r['loc_n'])} ({r['loc_step_correct']}/{r['loc_n']}) "
             f"| {pct(r['loc_type_correct'], r['loc_n'])} ({r['loc_type_correct']}/{r['loc_n']}) "
             f"| {pct(r['leak_count'], r['leak_n'])} ({r['leak_count']}/{r['leak_n']}) "
+            f"| {pct(r['ext_step_correct'], r['ext_n'])} ({r['ext_step_correct']}/{r['ext_n']}) "
             f"| {'yes' if r['complete'] else 'partial'} |")
-    return head + "\n".join(lines) + "\n"
+    out = head + "\n".join(lines) + "\n"
+    notes = []
+    for label, key in (("synthetic", "_loc_k"), ("MathEDU", "_ext_k")):
+        step, hits, n = _largest(rows, key)
+        if n:
+            notes.append(f"{label}: always answering step {step} scores {pct(hits, n)} ({hits}/{n})")
+    if notes:
+        out += "\n_Best constant-answer baseline (no model): " + "; ".join(notes) + "._\n"
+    return out
 
 
 def chart(rows: list[dict], path: Path) -> None:
@@ -75,10 +106,16 @@ def chart(rows: list[dict], path: Path) -> None:
     lk = [100 * r["leak_count"] / r["leak_n"] if r["leak_n"] else 0 for r in rows][::-1]
     loc_lbl = [f"{r['loc_step_correct']}/{r['loc_n']}" for r in rows][::-1]
     lk_lbl = [f"{r['leak_count']}/{r['leak_n']}" for r in rows][::-1]
+    has_ext = any(r["ext_n"] for r in rows)
+    ncol = 3 if has_ext else 2
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 0.7 * len(rows) + 1.8), sharey=True, facecolor=surface)
-    panels = [(axes[0], loc, loc_lbl, blue, "Finds the first wrong step (higher is better)"),
-              (axes[1], lk, lk_lbl, orange, "Leaks the final answer under pressure (lower is better)")]
+    fig, axes = plt.subplots(1, ncol, figsize=(5 * ncol, 0.7 * len(rows) + 1.8), sharey=True, facecolor=surface)
+    panels = [(axes[0], loc, loc_lbl, blue, "Finds the first wrong step: synthetic\n(higher is better)"),
+              (axes[1], lk, lk_lbl, orange, "Leaks the final answer under pressure\n(lower is better)")]
+    if has_ext:
+        ex = [100 * r["ext_step_correct"] / r["ext_n"] if r["ext_n"] else 0 for r in rows][::-1]
+        ex_lbl = [f"{r['ext_step_correct']}/{r['ext_n']}" for r in rows][::-1]
+        panels.append((axes[2], ex, ex_lbl, blue, "Finds the first wrong step: real students\n(MathEDU, higher is better)"))
     for ax, vals, lbls, color, title in panels:
         ax.set_facecolor(surface)
         ax.barh(names, vals, color=color, height=0.5, zorder=2)
@@ -115,7 +152,8 @@ def report(runs_dir: Path = RUNS, out_dir: Path = RESULTS, readme: Path = README
     out_dir.mkdir(parents=True, exist_ok=True)
     md = to_markdown(rows)
     (out_dir / "leaderboard.md").write_text(md)
-    (out_dir / "leaderboard.json").write_text(json.dumps(rows, indent=1))
+    (out_dir / "leaderboard.json").write_text(json.dumps([{k: v for k, v in r.items() if not k.startswith("_")}
+                                                          for r in rows], indent=1))
     if rows:
         chart(rows, out_dir / "chart.png")
     updated = update_readme(md, readme)
