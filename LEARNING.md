@@ -109,3 +109,13 @@ program, so different AI tutors can be compared fairly on exactly those two skil
     - **Gold label:** the "correct answer" a model is scored against. Here it comes from teachers, not SymPy.
     - **Baseline:** the score of a dumb strategy (e.g. "always say step 1"). A model is only impressive if
       it beats the baseline. On real data ~40% of errors are at step 1, so this matters a lot.
+
+## 2026-11-18: why nothing ran today
+- **What happened:** the cloud session's network proxy is supposed to add your OpenRouter key to every request
+  to openrouter.ai (so the key never sits in our code). The settings page shows the key is saved, but
+  OpenRouter still answered **401 "Missing Authentication header"**, meaning the request arrived with no key.
+- **401 vs 403:** 401 = "who are you?" (no or unreadable credentials). 403 = "I know who you are, but no".
+  A 401 here points at the key not being attached, not at a quota or permission problem.
+- **Why we stop instead of guessing:** every leaderboard number must come from real model replies.
+  Without a working key there are no replies, so the honest result is "no runs yet", not an estimate.
+- **Tests still pass (789):** the code is ready; only the key delivery is broken.

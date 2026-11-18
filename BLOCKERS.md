@@ -1,6 +1,15 @@
 # Blockers / actions for the owner
 
 ## 0. Model runs: the OpenRouter key never reached this cloud session (blocks the leaderboard)
+**Update 2026-11-18 (new session in the StepThree environment): still blocked.** The environment lists a
+network secret "OpenRouter API key" for host openrouter.ai, but `curl https://openrouter.ai/api/v1/key`
+returns `401 Missing Authentication header` both with `Authorization: Bearer proxy-injected` and with no
+header at all, so the proxy is not adding the key. A new session did not fix it. Steps 2-7 were not run;
+`pytest -q` = 789 passed. Likely fix: open the StepThree environment's settings (Edit -> Network secrets),
+delete and re-save the OpenRouter key for host `openrouter.ai` with header `Authorization` and prefix
+`Bearer` (value = the `sk-or-...` key, no "Bearer " typed into the value), then start a new session.
+Or use Option B below on your own computer.
+
 The key is saved on the "StepThree" environment, but every OpenRouter call from the session that
 built the code returned `401 Missing Authentication header` for 70+ minutes (checked once a minute).
 Docs say a saved key is picked up by a *new* session. No result has been invented: `runs/` is empty,
