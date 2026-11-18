@@ -4,8 +4,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
+PKG = Path(__file__).resolve().parent
+ROOT = Path.cwd()  # config.yaml, runs/, results/ live in the working directory
+
+
+def _data_dir() -> Path:
+    for d in (Path.cwd() / "data", PKG.parent / "data", PKG / "_data"):
+        if (d / "problems").is_dir():
+            return d
+    return Path.cwd() / "data"
+
+
+DATA_DIR = _data_dir()
 PROBLEM_DIR = DATA_DIR / "problems"
 ITEMS_PATH = DATA_DIR / "items.jsonl"
 
