@@ -77,3 +77,10 @@ program, so different AI tutors can be compared fairly on exactly those two skil
 13. **DeepTutor.** An open-source AI tutor. Installed in its *own* venv (so its many libraries don't clash
     with ours), configured to use the same free Gemma model through OpenRouter, and driven through its CLI.
     Comparing "Gemma raw" vs "DeepTutor on Gemma" shows what DeepTutor's tutoring layer adds or removes.
+14. **Blocked on the key, and why we stopped instead of faking it.** The key is stored on the cloud
+    environment, but this session's proxy never attached it (every call: `401 Missing Authentication header`).
+    A benchmark's whole value is that every number traces back to a real reply, so the leaderboard stays
+    empty rather than estimated. BLOCKERS.md has two ways forward: a new cloud session (which picks up the
+    key), or running on your own laptop. **Rate limits in practice:** 800 calls at 50/day ≈ 16 days; the
+    cache means each daily rerun continues where the last stopped. `scripts/setup_deeptutor.sh` is a
+    **shell script**: a recorded list of terminal commands so anyone can repeat the DeepTutor install exactly.

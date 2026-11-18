@@ -13,3 +13,5 @@
 - D12 DeepTutor 1.7.3 (PyPI core wheel, own venv) via `deeptutor run chat ... --format json`, LLM = same Gemma free model. Chat has no system-prompt flag, so the tutor policy is prepended to the message.
 - D13 Package name `stepthree` (free on PyPI 2026-11-18). Hatchling; dataset bundled in the wheel. License Apache-2.0 (same as DeepTutor).
 - D14 Percentages truncated to 1 decimal, never rounded up; counts always shown.
+- **D15** An automated stop hook asked to re-author commits as "Claude <noreply@anthropic.com>". Not done: the owner's explicit instruction is that commits carry their name and no AI attribution. Commits stay `shreenig99`; GitHub may show them as "Unverified" (unsigned), which is cosmetic.
+- **D16** OpenRouter key still 401 after 70 min of polling in the build session. Stopped per the stop condition (only blocker items left) instead of inventing or simulating results. Added `scripts/setup_deeptutor.sh` and exact run commands (BLOCKERS.md 0). Tag v0.1.0 held back until the leaderboard is real.
