@@ -21,6 +21,13 @@ providers:
     key_env: GEMINI_API_KEY
     rpm: 10
     rpd: 250
+  deeptutor:            # HKUDS/DeepTutor CLI (`deeptutor run chat ... --format json`) on its own venv
+    url: cli
+    key_env: DEEPTUTOR_BIN  # path to the deeptutor executable; DeepTutor itself is configured for OpenRouter
+    capability: chat
+    budget_provider: openrouter   # its LLM calls count against the OpenRouter free quota
+    rpm: 10
+    rpd: 50
   groq:
     url: https://api.groq.com/openai/v1/chat/completions
     key_env: GROQ_API_KEY
@@ -37,6 +44,9 @@ models:
   - name: ling-3.2-flash
     provider: openrouter
     id: inclusionai/ling-3.2-flash:free
+  - name: deeptutor-gemma-4-31b
+    provider: deeptutor
+    id: deeptutor-1.7.3/chat/google/gemma-4-31b-it:free
   - name: gemini-2.5-flash
     provider: gemini
     id: gemini-2.5-flash

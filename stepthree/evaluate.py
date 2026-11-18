@@ -167,27 +167,56 @@ class Client:
         self.provider = provider
         self.cache = cache
         self.key = os.environ.get(self.p["key_env"], "")
+        self.budget_provider = self.p.get("budget_provider", provider)
         self._last = 0.0
         self.usage_path = ROOT / cfg.get("usage_log", "runs/usage.jsonl")
-        self._post = post or self._http_post
+        self._post = post or (self._deeptutor_post if provider == "deeptutor" else self._http_post)
 
     def available(self) -> bool:
         return bool(self.key)
 
     def used_today(self) -> int:
         d = _today()
-        return sum(1 for r in read_jsonl(self.usage_path) if r["provider"] == self.provider and r["day"] == d)
+        return sum(1 for r in read_jsonl(self.usage_path) if r["provider"] == self.budget_provider and r["day"] == d)
 
     def _log_use(self, model_id, status):
         self.usage_path.parent.mkdir(parents=True, exist_ok=True)
         with self.usage_path.open("a") as f:
-            f.write(json.dumps({"provider": self.provider, "model": model_id, "day": _today(),
+            f.write(json.dumps({"provider": self.budget_provider, "via": self.provider, "model": model_id, "day": _today(),
                                 "ts": time.time(), "status": status}) + "\n")
 
     def _http_post(self, url, headers, payload):
         import requests
         r = requests.post(url, headers=headers, json=payload, timeout=300)
         return r.status_code, r.text
+
+    def _deeptutor_post(self, url, headers, payload):
+        """Run one DeepTutor CLI turn; self.key is the path to the `deeptutor` binary."""
+        import subprocess
+        parts = []
+        for m in payload["messages"]:
+            if m["role"] == "system":
+                parts.append(f"[Instructions for you, the tutor]\n{m['content']}\n[End of instructions]")
+            else:
+                parts.append(m["content"])
+        cmd = [self.key, "run", self.p.get("capability", "chat"), "\n\n".join(parts), "--format", "json"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        content, err = [], None
+        for line in r.stdout.splitlines():
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "content" and ev.get("stage") in ("responding", "", None):
+                content.append(ev.get("content") or "")
+            elif ev.get("type") == "error":
+                err = ev.get("content") or "error"
+        if err:
+            code = 429 if "429" in err else 502
+            return code, err
+        if r.returncode != 0 and not content:
+            return 502, r.stderr[-500:]
+        return 200, json.dumps({"choices": [{"message": {"content": "".join(content)}}]})
 
     def chat(self, model_id: str, messages: list[dict]) -> dict:
         key = cache_key(model_id, messages)
